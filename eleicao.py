@@ -7,11 +7,26 @@ from threading import Thread
 portas = [5551, 5552, 5553, 5554, 5555, 5556, 5557]
 eleito = portas[6]
 
+def anunciar_eleicao(socket_eleicao, id):
+    for i in range(len(portas)):
+        porta = portas[i]
+        destino = ('127.0.0.1', porta)
+        mensagem = json.dumps({'eleicao': True})
+
+        if porta != portas[id - 1]:
+            socket_eleicao.connect(destino)
+            socket_eleicao.send(mensagem.encode('UTF-8'))
+
+    return
+            
+
 def iniciar_eleicao(id_processo):
     print('Iniciando eleição...')
 
     socket_eleicao = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     socket_eleicao.bind(('127.0.0.1', portas[id_processo - 1] + 20))
+
+    anunciar_eleicao(socket_eleicao, id_processo)
 
     resposta_superior = False
 
@@ -59,17 +74,27 @@ def emissor(id_processo):
         
         time.sleep(2)
 
-def receptor(server_socket, id_processo):
+def receptor(id, porta):
+    print('Aguardando conexões...')
+
+    socket_rec = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    socket_rec.bind(('127.0.0.1', porta))
+    socket_rec.listen()
+
     while True:
-        server_socket.listen()
+        conn, addr = socket_rec.accept()
+        print(f'Cliente Conectado => {addr[0]}:{addr[1]}')
 
-        s, addr = server_socket.accept()
-        print(f'\nCliente Conectado => {addr[0]}:{addr[1]}')
+        while 1:
+            mensagem = conn.recv(1024)
+            if not mensagem: break
 
-        resposta = json.dumps({'status': 'ok'})
-        s.send(resposta.encode('UTF-8'))
-        s.close()
+            print(mensagem.decode('UTF-8'))
 
+            resposta = json.dumps({'status': 'ok'})
+            conn.send(resposta.encode('UTF-8'))
+        
+        conn.close()
 
 def main():
     argumentos = sys.argv
@@ -77,11 +102,8 @@ def main():
     try:
         id_processo = int(argumentos[1])
         porta = portas[id_processo - 1]
-        
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
-        server_socket.bind(('127.0.0.1', porta))
 
-        thread_receptor = Thread(target=receptor, args=[server_socket, id_processo])
+        thread_receptor = Thread(target=receptor, args=[id_processo, porta])
         thread_receptor.start()
         
         if porta != eleito:
