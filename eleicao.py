@@ -51,24 +51,21 @@ def eleicao(id):
     if len(portas_maiores) == 0:
         print('Sou o novo líder...')
         novo_lider = portas[id - 1]
-        porta_lider = novo_lider
-
-        for i in range(id - 1):
-            envia_mensagem(
-                mensagem=json.dumps({'processo': id, 'eleicao': True, 'novo_lider': novo_lider}),
-                destino=(ip, portas[i])
-            )
-
-            print(portas[i])
     else:
-        for i in range(id - 1, len(portas)):
-            pass
+        novo_lider = portas_maiores[-1]
+        
+    porta_lider = novo_lider
+
+    for i in range(id - 1):
+        envia_mensagem(
+            mensagem=json.dumps({'processo': id, 'eleicao': True, 'novo_lider': novo_lider}),
+            destino=(ip, portas[i])
+        )
 
     print('\n')
     return novo_lider
 
 def verifica_lider(lider, id):
-    global porta_lider
     mensagem = json.dumps({'processo': id})
     
     while True:
@@ -90,7 +87,6 @@ def verifica_lider(lider, id):
 
 def main():
     global ip
-    global porta_lider
 
     argumentos = sys.argv
     id = int(argumentos[1])
@@ -126,7 +122,11 @@ def main():
             mensagem = json.loads(mensagem)
 
             print(mensagem)
-            
+            if 'eleicao' in mensagem and mensagem['eleicao']:
+                if 'novo_lider' in mensagem and mensagem['novo_lider']:
+                    porta_lider = mensagem['novo_lider']
+                    print(f'\nO novo lider é: {(ip, porta_lider)}\n')
+
             dados = None
         else:
             print('erro dados')
