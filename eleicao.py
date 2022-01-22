@@ -1,118 +1,139 @@
+import os
 import sys
 import json
 import time
 import socket
-from threading import Thread
+import threading
+from urllib import response
 
-portas = [5551, 5552, 5553, 5554, 5555, 5556, 5557]
-eleito = portas[6]
 
-def anunciar_eleicao(socket_eleicao, id):
-    for i in range(len(portas)):
-        porta = portas[i]
-        destino = ('127.0.0.1', porta)
-        mensagem = json.dumps({'eleicao': True})
 
-        if porta != portas[id - 1]:
-            socket_eleicao.connect(destino)
-            socket_eleicao.send(mensagem.encode('UTF-8'))
+portas = [5001, 5002, 5003, 5004, 5005, 5006, 5007]
+porta_lider = 0
 
-    return
-            
+ip = '127.0.0.1'
 
-def iniciar_eleicao(id_processo):
+
+def envia_mensagem(mensagem, destino):
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        
+        s.connect(destino)
+        s.send(mensagem.encode('UTF-8'))
+        
+        s.close() 
+        return True
+
+    except:
+        return False
+
+
+def eleicao(id):
     print('Iniciando eleição...')
 
-    socket_eleicao = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    socket_eleicao.bind(('127.0.0.1', portas[id_processo - 1] + 20))
+    global ip
+    global portas
+    global porta_lider
 
-    anunciar_eleicao(socket_eleicao, id_processo)
+    portas_maiores = []
+    novo_lider = 0
 
-    resposta_superior = False
+    for porta in portas:
+        if porta != portas[id - 1] and porta != porta_lider:
+            resposta = envia_mensagem(
+                mensagem=json.dumps({'processo': id, 'eleicao': True}), 
+                destino=(ip, porta),
+            )  
+            if resposta:       
+                if porta > portas[id - 1] and porta != porta_lider:
+                    portas_maiores.append(porta)
 
-    for i in range(id_processo, len(portas)):
-        porta_destino = portas[i]
+    if len(portas_maiores) == 0:
+        print('Sou o novo líder...')
+        novo_lider = portas[id - 1]
+        porta_lider = novo_lider
 
-        if porta_destino != eleito:
-            destino = ('127.0.0.1', porta_destino)
-            mensagem = json.dumps({'eleicao': True})
+        for i in range(id - 1):
+            envia_mensagem(
+                mensagem=json.dumps({'processo': id, 'eleicao': True, 'novo_lider': novo_lider}),
+                destino=(ip, portas[i])
+            )
 
-            try:
-                socket_eleicao.connect(destino)
-                socket_eleicao.send(mensagem.encode('UTF-8'))
-
-                resposta, servidor = socket_eleicao.recvfrom(1024)
-                print(f'\nResposta Eleição => {resposta}\n')
-            except:
-                pass
-
-
-
-def emissor(id_processo):
-    loop_emissor = True
-
-    socket_emissor = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
-    socket_emissor.bind(('127.0.0.1', portas[id_processo - 1] + 10))
-    socket_emissor.settimeout(2)
-
-    while loop_emissor:
-        mensagem = json.dumps({'processo': id_processo})
-        destino = ('127.0.0.1', eleito)
-
-        try:
-            socket_emissor.connect(destino)
-            socket_emissor.send(mensagem.encode('UTF-8'))
-
-            resposta, servidor = socket_emissor.recvfrom(1024)
-            print(f'Resposta: {resposta.decode("UTF-8")}')
-        except ConnectionResetError as e:
+            print(portas[i])
+    else:
+        for i in range(id - 1, len(portas)):
             pass
-        except ConnectionRefusedError as error:
-            iniciar_eleicao(id_processo) 
-        except socket.timeout:
-            iniciar_eleicao(id_processo)
-        
+
+    print('\n')
+    return novo_lider
+
+def verifica_lider(lider, id):
+    global porta_lider
+    mensagem = json.dumps({'processo': id})
+    
+    while True:
+        print(f'Líder: {lider}')
+        status = envia_mensagem(mensagem, lider)
+
+        if not status:
+            novo_lider = eleicao(id)
+            if novo_lider == portas[id - 1]:
+                break
+            else:
+                porta_lider = novo_lider
+                lider = (ip, porta_lider)
+
+        else:
+            print('ON')
+
         time.sleep(2)
 
-def receptor(id, porta):
-    print('Aguardando conexões...')
-
-    socket_rec = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    socket_rec.bind(('127.0.0.1', porta))
-    socket_rec.listen()
-
-    while True:
-        conn, addr = socket_rec.accept()
-        print(f'Cliente Conectado => {addr[0]}:{addr[1]}')
-
-        while 1:
-            mensagem = conn.recv(1024)
-            if not mensagem: break
-
-            print(mensagem.decode('UTF-8'))
-
-            resposta = json.dumps({'status': 'ok'})
-            conn.send(resposta.encode('UTF-8'))
-        
-        conn.close()
-
 def main():
+    global ip
+    global porta_lider
+
     argumentos = sys.argv
+    id = int(argumentos[1])
     
+    if id < 1 or id > 7:
+        print('ID inválido')
+        return
+
     try:
-        id_processo = int(argumentos[1])
-        porta = portas[id_processo - 1]
+        porta_lider = portas[6]
+        porta = portas[id - 1]
 
-        thread_receptor = Thread(target=receptor, args=[id_processo, porta])
-        thread_receptor.start()
-        
-        if porta != eleito:
-            thread_emissor = Thread(target=emissor, args=[id_processo])
-            thread_emissor.start()
-
+        main_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        main_socket.bind((ip, porta))
     except:
         print('------------ Erro! ------------')
         print(f'Informe o identificador do processo (1 a 7)\n')
+
+    main_socket.listen()
+
+    if porta != porta_lider:
+        thread_verificacao = threading.Thread(target=verifica_lider, args=[(ip, porta_lider), id])
+        thread_verificacao.start()
+
+    conexao, endereco = main_socket.accept()
+    dados = conexao.recv(1024)
+
+    while True:
+        print(f'Cliente Conectado => {endereco[0]}:{endereco[1]}')
+
+        if dados:
+            mensagem = dados.decode('UTF-8')
+            mensagem = json.loads(mensagem)
+
+            print(mensagem)
+            
+            dados = None
+        else:
+            print('erro dados')
+            conexao, endereco = main_socket.accept()
+            dados = conexao.recv(1024)
+
+
 
 if __name__ == '__main__':
     main()
